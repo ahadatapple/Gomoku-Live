@@ -19,6 +19,13 @@ import { replay, type Color, type MoveRow } from '../game/rules'
 import { callIntegrationAsOwner, extractText } from '../server/integrations-call'
 
 export const COACH_MODEL = 'claude-haiku-5-5'
+/**
+ * Output budget. 450 was too tight in production: the call failed with
+ * `output_budget_exhausted` before any text arrived, since the model can spend
+ * output tokens reasoning first. Length is controlled by the prompt
+ * (120-180 words) instead of by this cap.
+ */
+export const COACH_MAX_TOKENS = 2000
 
 type Review = { gameId: string; userId: string; status: string; text?: string; moments?: string; error?: string }
 
@@ -86,7 +93,7 @@ export async function reviewGame({ userId, params, tools, env }: ActionContext<E
 
   const res = await callIntegrationAsOwner(env, 'anthropic/chat-completion', {
     model: COACH_MODEL,
-    max_tokens: 450,
+    max_tokens: COACH_MAX_TOKENS,
     system: SYSTEM,
     messages: [{ role: 'user', content: user }],
   })

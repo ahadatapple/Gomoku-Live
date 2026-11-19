@@ -48,6 +48,7 @@ describe('AI coach', () => {
     expect(llm.calls).toHaveLength(1) // double-click pays once
     const prompt = JSON.stringify(llm.calls[0])
     expect(llm.calls[0]).toMatchObject({ endpoint: 'anthropic/chat-completion', model: 'claude-haiku-5-5' })
+    expect(llm.calls[0].max_tokens).toBeGreaterThanOrEqual(1500) // 450 hit output_budget_exhausted live
     expect(prompt).toContain('you lost')
     expect(prompt).toContain('without blocking the opponent\'s winning point at E8') // engine found Bob's missed block (A8-D8 four, edge-closed)
     expect(db.reviews[0].data).toMatchObject({ status: 'done', text: 'You won by building an open four.' })
