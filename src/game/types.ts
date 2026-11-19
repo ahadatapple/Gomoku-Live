@@ -7,7 +7,7 @@ export type GameRecord = {
   hostId?: string
   winner?: string
   endReason?: string
-  winLine?: number[] | string
+  winLine?: string
   moveCount?: number
   lastMoveAt?: string
 }

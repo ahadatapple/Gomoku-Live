@@ -24,7 +24,8 @@ type Game = {
   hostId?: string
   winner?: string
   endReason?: string
-  winLine?: number[] | string
+  /** JSON-encoded cell indices (text column). */
+  winLine?: string
   moveCount?: number
   lastMoveAt?: string
 }
@@ -89,7 +90,7 @@ async function commitMove(
     patch.status = 'finished'
     patch.winner = after.winner
     patch.endReason = after.winner === 'draw' ? 'full' : 'five'
-    patch.winLine = after.winLine ?? []
+    patch.winLine = JSON.stringify(after.winLine ?? [])
   }
   await tools.update('games', gameId, patch)
   return { success: true, data: { ply: state.ply, winner: after.winner, next: after } }
@@ -133,7 +134,7 @@ export async function createGame({ userId, params, tools }: Ctx): Promise<Action
     hostId: userId,
     winner: '',
     endReason: '',
-    winLine: [],
+    winLine: '',
     moveCount: 0,
     lastMoveAt: new Date().toISOString(),
   }
