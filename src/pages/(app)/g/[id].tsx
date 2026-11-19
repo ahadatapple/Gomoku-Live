@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AuthOverlay, useAuth, usePresenceRoom, useUserLookup } from 'deepspace'
-import { Check, Copy, Cpu, Eye, Flag, RotateCcw } from 'lucide-react'
+import { Bell, Check, Copy, Cpu, Eye, Flag, RotateCcw } from 'lucide-react'
 import { Button, useToast } from '@/components/ui'
 import { Board, cellName } from '../../../components/game/Board'
 import { callAction } from '../../../lib/callAction'
-import { N, type Color } from '../../../game/rules'
+import { N, replay, type Color } from '../../../game/rules'
+import { CoachPanel } from '../../../components/game/CoachPanel'
+import { EmailToggle } from '../../../components/game/EmailToggle'
+import { useTurnAlert } from '../../../game/useTurnAlert'
 import { BOT_ID } from '../../../game/types'
 import { useGame } from '../../../game/useGame'
 import { cn } from '../../../lib/utils'
@@ -25,12 +28,19 @@ export default function GamePage() {
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [signIn, setSignIn] = useState(false)
+  /** Replay position for finished games; null = live board. */
+  const [viewPly, setViewPly] = useState<number | null>(null)
 
   const myColor: Color | null = seats.X && seats.X === userId ? 'X' : seats.O && seats.O === userId ? 'O' : null
   const finished = game?.status === 'finished' || !!state.winner
   const isBotGame = game?.mode === 'bot'
   const botToMove = isBotGame && !finished && seats[state.toMove] === BOT_ID
   const myTurn = !!myColor && !finished && state.toMove === myColor && !!seats.X && !!seats.O
+  const alert = useTurnAlert(myTurn && !!game && game.mode === 'pvp', state.ply)
+  const shown = useMemo(
+    () => (viewPly === null ? state : replay(moves.slice(0, viewPly + 1))),
+    [viewPly, state, moves],
+  )
   const nameOf = (uid?: string) =>
     !uid ? null : uid === BOT_ID ? `Engine · ${LEVEL_NAME[game?.level ?? ''] ?? ''}` : uid === userId ? 'You' : (getName(uid) ?? 'Player')
 
@@ -151,15 +161,37 @@ export default function GamePage() {
           )}
         </div>
         <Board
-          board={state.board}
-          lastIdx={state.lastIdx}
-          winLine={state.winLine}
-          playAs={myTurn ? myColor : null}
+          board={shown.board}
+          lastIdx={shown.lastIdx}
+          winLine={shown.winLine}
+          playAs={myTurn && viewPly === null ? myColor : null}
           pendingIdx={pendingIdx}
           peerHovers={peerHovers.filter((h) => h.color !== myColor)}
           onPlay={play}
           onHover={(idx) => myColor && !finished && updateState({ hover: idx })}
         />
+        {finished && moves.length > 0 && (
+          <div className="flex w-full max-w-[min(92vw,640px)] items-center gap-3 text-sm">
+            <label htmlFor="replay" className="text-muted-foreground">
+              Replay
+            </label>
+            <input
+              id="replay"
+              type="range"
+              min={0}
+              max={moves.length - 1}
+              value={viewPly ?? moves.length - 1}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                setViewPly(v === moves.length - 1 ? null : v)
+              }}
+              className="flex-1 accent-[var(--color-seal)]"
+            />
+            <span className="w-16 text-right font-mono text-xs">
+              {(viewPly ?? moves.length - 1) + 1}/{moves.length}
+            </span>
+          </div>
+        )}
       </div>
 
       <aside className="flex flex-col gap-5">
@@ -224,6 +256,18 @@ export default function GamePage() {
           )}
           {!myColor && <p className="text-xs text-muted-foreground">You&apos;re watching. Moves appear live.</p>}
         </section>
+
+        {myColor && finished && userId && game.endReason !== 'cancelled' && (
+          <CoachPanel gameId={id} userId={userId} onJump={(ply) => setViewPly(ply)} />
+        )}
+
+        {myColor && !finished && game.mode === 'pvp' && alert.supported && alert.permission !== 'granted' && (
+          <Button variant="ghost" size="sm" onClick={alert.request}>
+            <Bell className="h-4 w-4" /> Alert me when it&apos;s my move
+          </Button>
+        )}
+
+        {myColor && !finished && game.mode === 'pvp' && userId && <EmailToggle userId={userId} />}
 
         {isBotGame && lastBot && (
           <section className="rounded-md border border-border bg-card p-4 text-sm">

@@ -18,8 +18,16 @@ the server.
 - **Watch.** Anyone else who opens the link, signed in or not, sees the game live.
 - **Leaderboard.** Wins, losses and draws, head-to-head and against each engine
   level, worked out from finished games.
-- Resign, cancel a challenge, rematch with colours swapped, a move list, and the
-  engine's search depth and think time for its last move.
+- **AI coach.** After a game, a player can ask for a review. The engine
+  finds the moments that decided it (a missed win in one, a missed block, an
+  unstoppable double threat, the biggest disagreements with the engine).
+  Claude then explains them in plain language, and clicking a moment jumps
+  the replay slider to that position.
+- **Turn alerts.** While it's your move, the tab title shows "● Your move", with
+  an optional browser notification if the tab is in the background. Opt-in
+  emails go out if you've been away 10 minutes, at most one per turn.
+- Resign, cancel a challenge, rematch with colours swapped, a move list, a
+  replay slider, and the engine's search depth and think time for its last move.
 
 ## How it uses DeepSpace
 
@@ -32,11 +40,50 @@ the server.
 | **Presence room** (`usePresenceRoom('game:<id>')`) | Who's at the board, spectator count, opponent's hover cursor | Ephemeral state belongs in presence, not in records. |
 | **Auth** | Sign-in to play; anonymous viewers can watch | `RecordProvider allowAnonymous` + read-only RBAC give spectating for free. |
 
-**Integrations I left out on purpose:** AI chat/LLMs, web search, image
-generation, file storage, payments, scheduled jobs. None of them makes Gomoku
-better. The opponent is a deterministic search engine, which is the point of the
-project, and an LLM would play worse and cost credits per move. I'd rather ship
-three primitives used properly than bolt on integrations for the count.
+| **`anthropic/chat-completion`** (Claude Haiku) | AI post-game coach | Explaining *why* a game was lost is the one thing the search engine can't do. |
+| **`email/send`** | "Your move" reminders | Covers the case the tab alert can't: the player closed the tab. |
+| **Cron** (`src/cron.ts`) | Runs the reminder check every 5 minutes | Platform scheduler instead of a hand-rolled timer. |
+
+### Why the coach is built this way
+
+LLMs are unreliable at board geometry: asked "where did I go wrong?" from a raw
+move list, they invent threats and coordinates. So the work is split:
+`src/game/analysis.ts` replays the game and uses the engine to find the
+critical moments deterministically, and Claude only puts those facts into
+words. The prompt forbids mentioning any coordinate that isn't in the input,
+and the facts are shown under the text so the player can check them on the board.
+
+The call is made from a server action (`src/actions/coach.ts`). The client
+never talks to the model and no vendor key exists anywhere in the repo:
+the platform proxy bills the app owner using a JWT injected at deploy time.
+
+**Billing tradeoff:** the coach is **developer-billed**. With per-user billing,
+every player would need DeepSpace credits before seeing a review, so the
+feature would fail for exactly the people trying the app. Instead, the cost is
+bounded: sign-in required, players only, finished games only, and one review
+per player per game. A `uniqueOn(gameId, userId)` claim is taken *before* the
+paid call, so double-clicks and two open tabs pay once. A failed call is
+recorded and can be retried.
+
+### Notifications without spam
+
+Tab title and browser notifications cost nothing and need no integration. They
+cover the common case of a game open in another tab. Email is opt-in, sent
+only after 10 minutes of waiting, at most once per turn (`games.remindedPly`),
+and never for games idle more than a week. The ply is marked before sending, so
+a failing send can't become an email every five minutes. I looked for a push or
+SMS endpoint in the integration catalog and found none. `slack/send-message`
+needs each user's Slack token, which is the wrong fit for a casual game.
+
+### Left out on purpose
+
+- **An LLM choosing moves.** It would be slower (seconds per call), cost per
+  move, and can suggest illegal or nonsense moves. The deterministic engine is the point of the project.
+- **Image generation (victory cards), LiveKit voice/video, Stripe, web search.**
+  None of these makes the game better to play. Video for a quiet turn-based game
+  is bandwidth and billing complexity, and payments would put friction before
+  the first move.
+- **Per-user billing for the coach** (see above).
 
 ## The main tradeoff: search depth vs response time
 
@@ -79,7 +126,7 @@ and the corner diagonals are counted twice.
 ## Tests
 
 ```
-npm run test:unit                 # 356 unit tests: parity, rules, actions, standings
+npm run test:unit                 # 365 unit tests: parity, rules, actions, coach, analysis, reminders, standings
 npx deepspace test run gomoku     # two browsers: challenge link → live game → win; engine reply
 ```
 
@@ -102,8 +149,12 @@ engine-parity/    original Python + fixture generator
 
 ## Known limits / next steps
 
-- **No clocks or abandonment.** An idle opponent leaves a game open forever.
-  Next step: a per-move time limit, enforced by a scheduled job that forfeits stale games.
+- **No clocks or abandonment.** An idle opponent leaves a game open (reminders
+  stop after a week). Next step: a per-move time limit, enforced by the same
+  cron task forfeiting stale games.
+- **The coach's engine comparison is shallow** (depth 2, 250 ms per move), so
+  "engine preferred" moments are suggestions, not proofs. Missed wins, missed
+  blocks and double threats are exact.
 - **Leaderboard is computed client-side** from up to 1,000 finished games. That's
   fine at this scale. Past that I'd keep a `ratings` collection (Elo) updated by
   the `move`/`resign` actions.

@@ -44,6 +44,7 @@ export const gamesSchema: CollectionSchema = {
     text('winLine', { interpretation: { kind: 'json' }, maxLength: 200 }),
     num('moveCount'),
     text('lastMoveAt', { interpretation: { kind: 'datetime' } }),
+    num('remindedPly'), // last ply a turn-reminder email was sent for
   ],
   permissions: readOnlyForClients,
 }
@@ -71,5 +72,31 @@ export const seatsSchema: CollectionSchema = {
     text('userId', { maxLength: 128 }),
   ],
   uniqueOn: ['gameId', 'color'],
+  permissions: readOnlyForClients,
+}
+
+/**
+ * Cached AI coach reviews, one per (game, player). The `uniqueOn` claim is
+ * taken BEFORE the paid LLM call, so a double-click or two tabs pay once.
+ */
+export const reviewsSchema: CollectionSchema = {
+  name: 'reviews',
+  columns: [
+    text('gameId', { required: true, maxLength: 128 }),
+    text('userId', { required: true, maxLength: 128 }),
+    text('status', { interpretation: { kind: 'select', options: ['pending', 'done', 'error'] } }),
+    text('text', { maxLength: 6000 }),
+    text('moments', { interpretation: { kind: 'json' }, maxLength: 6000 }),
+    text('error', { maxLength: 500 }),
+  ],
+  uniqueOn: ['gameId', 'userId'],
+  permissions: readOnlyForClients,
+}
+
+/** Per-user notification preference (opt-in). Written only by setEmailTurns. */
+export const prefsSchema: CollectionSchema = {
+  name: 'prefs',
+  columns: [text('userId', { required: true, maxLength: 128 }), text('emailTurns', { maxLength: 3 })],
+  uniqueOn: ['userId'],
   permissions: readOnlyForClients,
 }
