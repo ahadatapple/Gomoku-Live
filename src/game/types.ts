@@ -11,6 +11,6 @@ export type GameRecord = {
   moveCount?: number
   lastMoveAt?: string
 }
-export type MoveRecord = { gameId: string; ply: number; idx: number; stone: string; byId: string; thinkMs?: number; depth?: number }
+export type MoveRecord = { gameId: string; ply: number; idx: number; stone: string; byId: string; thinkMs?: number; nodes?: number; depth?: number }
 export type SeatRecord = { gameId: string; color: 'X' | 'O'; userId: string }
 export const BOT_ID = 'bot'

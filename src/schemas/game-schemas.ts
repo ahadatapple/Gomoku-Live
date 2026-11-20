@@ -57,7 +57,8 @@ export const movesSchema: CollectionSchema = {
     num('idx'),
     text('stone', { maxLength: 1 }),
     text('byId', { maxLength: 128 }),
-    num('thinkMs'),
+    num('thinkMs'), // legacy: always 0 on Workers (frozen clock); no longer written
+    num('nodes'), // positions the engine searched for this move
     num('depth'),
   ],
   uniqueOn: ['gameId', 'ply'],

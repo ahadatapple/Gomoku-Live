@@ -12,7 +12,7 @@ type Pick = 'X' | 'O' | 'random'
 const LEVELS = [
   { id: 'easy', label: 'Easy', note: '1-ply, noisy eval (your slider_eval)' },
   { id: 'medium', label: 'Medium', note: '2-ply alpha-beta' },
-  { id: 'hard', label: 'Hard', note: 'up to 4-ply, 1.5 s budget' },
+  { id: 'hard', label: 'Hard', note: 'up to 4-ply, capped at 12,000 positions' },
 ] as const
 const LIVE_WINDOW_MS = 30 * 60 * 1000
 

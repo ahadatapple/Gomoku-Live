@@ -87,31 +87,43 @@ needs each user's Slack token, which is the wrong fit for a casual game.
 
 ## The main tradeoff: search depth vs response time
 
-The engine plays inside a Worker request, so it gets a wall-clock budget. On
-a 12-stone midgame (Node 22, one core):
+The engine runs inside a Worker request, so every extra ply of search is extra
+waiting for the player. Positions searched, measured in Node 22 on one core
+(about 8 positions per ms):
 
-| Depth | Time | Nodes |
+| | Positions | Time (Node) |
 |---|---|---|
-| 1 | ~30 ms | 60 |
-| 2 | ~50 ms | 245 |
-| 3 | ~110 ms | 794 |
-| 4 | ~950 ms | 6,146 |
+| Depth 4, quiet opening | 2k to 13k | 0.4 to 1.4 s |
+| Depth 4, busy midgame | 40k to 110k | 5 to 15 s |
+| Hard, capped at 12k positions | max 12,001 | max ~2 s |
 
 The original Python searches *every* empty cell, which on 15×15 is about 225^d
 positions and is unplayable past depth 1 to 2. The production search keeps the
-original scoring exactly but changes **which** moves it searches and **for how
-long**:
+original scoring exactly but changes **which** moves it searches and **how
+many**:
 
 - **Candidate pruning:** only cells within 2 of an existing stone (~60 instead of ~200).
 - **Move ordering:** a cheap local-threat score, so alpha-beta cuts off earlier.
-- **Iterative deepening under a deadline:** search depth 1, 2, 3… and keep the
-  move from the deepest *completed* depth when time runs out.
-- **Levels = budgets:** Easy is depth 1 with the original `slider_eval` noise.
-  Medium is depth 2. Hard is up to depth 4 within 1.5 s.
+- **Iterative deepening under a position budget:** search depth 1, 2, 3… and
+  keep the move from the deepest *completed* depth when the budget runs out.
+- **Levels = budgets:** Easy is depth 1 with the original `slider_eval` noise
+  (2k positions). Medium is depth 2 (6k). Hard is up to depth 4, capped at 12k.
+  In a full Hard-vs-Medium game, Hard completed depth 4 on 4 moves, depth 3 on
+  9, and depth 1 to 2 on the rest, and still won.
 
-Going deeper (depth 5 and beyond, or a threat-space search) would need an
-incremental evaluator. The current eval rescans the whole board, about
-150 µs per call, which is where the time goes.
+**A bug found after deploying:** the first version capped the search by
+wall-clock time (1.5 s). On Cloudflare Workers the clock doesn't advance
+during pure computation, only across network or storage calls, so the
+deadline never fired. Every engine move logged `ms=0`, and Hard ran uncapped
+depth 4, which can take many seconds late in a game. The page showed
+"searched 4 ply in 0 ms". The fix was to budget *positions searched* instead,
+which behaves the same in Workers, Node and tests. A test now freezes the
+clock to simulate Workers and checks that the cap still stops the search.
+The page shows positions searched, not milliseconds.
+
+Going deeper (depth 5+, or a threat-space search) would need an incremental
+evaluator. The current eval rescans the whole board, about 120 µs per call,
+which is where the time goes.
 
 ## Is the port faithful?
 

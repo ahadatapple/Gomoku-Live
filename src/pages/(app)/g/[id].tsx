@@ -275,8 +275,8 @@ export default function GamePage() {
               <Cpu className="h-3.5 w-3.5" /> Engine&apos;s last search
             </h2>
             <p>
-              Played <b>{cellName(lastBot.idx)}</b> after searching <b>{lastBot.depth || 1} ply</b> in{' '}
-              <b>{lastBot.thinkMs ?? 0} ms</b>.
+              Played <b>{cellName(lastBot.idx)}</b> after searching{' '}
+              <b>{(lastBot.nodes ?? 0).toLocaleString()} positions</b>, <b>{lastBot.depth || 1} ply</b> deep.
             </p>
           </section>
         )}

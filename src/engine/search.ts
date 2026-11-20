@@ -11,9 +11,16 @@
  *   - candidates: only empty cells within 2 of an existing stone
  *   - ordering: candidates sorted by a cheap local-threat score so alpha-beta
  *     prunes earlier
- *   - iterative deepening under a wall-clock budget: depth 1, 2, 3... until
- *     the budget runs out; the move from the deepest *completed* depth wins.
+ *   - iterative deepening under a POSITION budget: depth 1, 2, 3... until
+ *     `maxNodes` positions have been searched; the move from the deepest
+ *     *completed* depth wins.
  * That budget is the search-depth vs response-time tradeoff.
+ *
+ * Why positions, not milliseconds: on Cloudflare Workers the clock does not
+ * advance during pure computation (it only moves across I/O), so a wall-clock
+ * deadline never fires in production — the search ran to full depth and
+ * recorded "0 ms" for every move. A node count behaves identically in Workers,
+ * Node and tests. `budgetMs` is kept as a secondary guard where a clock works.
  */
 import { EMPTY, X, O, other, smartBoardEval, lines, type Stone } from './eval'
 
@@ -193,7 +200,10 @@ export function bestMove(
   me: Stone,
   opts: {
     maxDepth: number
-    budgetMs: number
+    /** Hard cap on positions searched. The production limit (see levels.ts). */
+    maxNodes: number
+    /** Optional wall-clock guard; does NOT fire on Workers (frozen clock). */
+    budgetMs?: number
     now?: () => number
     /** Defaults to the ported smart_board_eval. */
     evalFn?: (board: Uint8Array, n: number, stone: Stone) => number
@@ -201,7 +211,8 @@ export function bestMove(
 ): { move: Move | null; stats: SearchStats } {
   const now = opts.now ?? (() => Date.now())
   const start = now()
-  const deadline = start + opts.budgetMs
+  const deadline = start + (opts.budgetMs ?? Infinity)
+  const maxNodes = opts.maxNodes
   const opp = other(me)
   const evalFn = opts.evalFn ?? smartBoardEval
   const b = board.slice()
@@ -228,7 +239,7 @@ export function bestMove(
       .map(([i]) => i)
 
   const rec = (d: number, stone: Stone, alpha: number, beta: number, lastIdx: number): [number, number] => {
-    if ((++nodes & 63) === 0 && now() > deadline) throw new Timeout()
+    if (++nodes > maxNodes || ((nodes & 63) === 0 && now() > deadline)) throw new Timeout()
     const terminal = lastIdx >= 0 && winsAt(b, n, lastIdx)
     if (d === 0 || terminal || isFull(b)) {
       const s = evalFn(b, n, stone)
@@ -276,7 +287,7 @@ export function bestMove(
       timedOut = true
       break
     }
-    if (now() > deadline) break
+    if (nodes >= maxNodes || now() > deadline) break
   }
   return {
     move: bestIdx < 0 ? null : { row: Math.floor(bestIdx / n), col: bestIdx % n },

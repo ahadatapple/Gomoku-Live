@@ -29,14 +29,14 @@ describe('production search', () => {
   const put = (b: Uint8Array, s: Stone, cells: [number, number][]) => cells.forEach(([r, c]) => (b[r * 15 + c] = s))
 
   it('opens in the centre', () => {
-    expect(bestMove(empty(), 15, X, { maxDepth: 2, budgetMs: 1000 }).move).toEqual({ row: 7, col: 7 })
+    expect(bestMove(empty(), 15, X, { maxDepth: 2, maxNodes: 5000 }).move).toEqual({ row: 7, col: 7 })
   })
 
   it('takes a win in one', () => {
     const b = empty()
     put(b, O, [[7, 3], [7, 4], [7, 5], [7, 6]])
     put(b, X, [[3, 3], [4, 4], [9, 9], [10, 10]])
-    const { move } = bestMove(b, 15, O, { maxDepth: 3, budgetMs: 1000 })
+    const { move } = bestMove(b, 15, O, { maxDepth: 3, maxNodes: 5000 })
     b[move!.row * 15 + move!.col] = O
     expect(hasFive(b, 15, O)).toBe(true)
   })
@@ -45,16 +45,20 @@ describe('production search', () => {
     const b = empty()
     put(b, X, [[7, 4], [7, 5], [7, 6], [7, 7]])
     put(b, O, [[6, 5], [8, 6], [6, 7]])
-    const { move } = bestMove(b, 15, O, { maxDepth: 2, budgetMs: 2000 })
+    const { move } = bestMove(b, 15, O, { maxDepth: 2, maxNodes: 5000 })
     expect([[7, 3], [7, 8]]).toContainEqual([move!.row, move!.col])
   })
 
-  it('respects the time budget', () => {
+  it('stops at the position cap even with a frozen clock (as on Workers)', () => {
     const b = empty()
     put(b, X, [[7, 7], [8, 8], [6, 8]])
     put(b, O, [[7, 8], [8, 7]])
-    const { stats } = bestMove(b, 15, X, { maxDepth: 6, budgetMs: 300 })
-    expect(stats.ms).toBeLessThan(600)
+    const frozen = () => 1_000_000 // Workers: Date.now() does not advance during CPU work
+    const { move, stats } = bestMove(b, 15, X, { maxDepth: 6, maxNodes: 3000, budgetMs: 10, now: frozen })
+    expect(stats.nodes).toBeLessThanOrEqual(3001)
+    expect(stats.timedOut).toBe(true)
     expect(stats.depthReached).toBeGreaterThanOrEqual(1)
+    expect(stats.depthReached).toBeLessThan(6)
+    expect(move).not.toBeNull()
   })
 })

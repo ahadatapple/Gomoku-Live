@@ -66,7 +66,7 @@ async function commitMove(
   state: GameState,
   idx: number,
   byId: string,
-  stats: { thinkMs?: number; depth?: number } = {},
+  stats: { nodes?: number; depth?: number } = {},
 ): Promise<ActionResult<{ ply: number; winner: string | null; next: GameState }>> {
   const created = await tools.create('moves', {
     gameId,
@@ -74,7 +74,7 @@ async function commitMove(
     idx,
     stone: state.toMove,
     byId,
-    thinkMs: stats.thinkMs ?? 0,
+    nodes: stats.nodes ?? 0,
     depth: stats.depth ?? 0,
   })
   if (!created.success) {
@@ -103,15 +103,15 @@ async function playBotTurn(tools: ActionTools, gameId: string, game: Game, seats
   const cfg = LEVELS[level]
   const { move, stats } = bestMove(state.board, N, stoneOf(state.toMove), {
     maxDepth: cfg.maxDepth,
-    budgetMs: cfg.budgetMs,
+    maxNodes: cfg.maxNodes,
     evalFn: cfg.eval,
   })
   if (!move) return null
   console.info(
-    `[engine] game=${gameId} level=${level} depth=${stats.depthReached} nodes=${stats.nodes} ms=${stats.ms} timedOut=${stats.timedOut}`,
+    `[engine] game=${gameId} level=${level} depth=${stats.depthReached} nodes=${stats.nodes} capped=${stats.timedOut}`,
   )
   return commitMove(tools, gameId, state, move.row * N + move.col, BOT_ID, {
-    thinkMs: stats.ms,
+    nodes: stats.nodes,
     depth: stats.depthReached,
   })
 }

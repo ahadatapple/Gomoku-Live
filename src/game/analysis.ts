@@ -62,7 +62,7 @@ export function analyse(moves: MoveRow[], opts: { focus?: Color; engineDepth?: n
         moments.push({ ply: m.ply, kind: 'missed_block', color, played: coord(m.idx), better: theirWins.map(coord) })
       } else if (depth > 0 && !myWins.length && !theirWins.length) {
         // Compare with the engine on quiet positions only.
-        const { move } = bestMove(board, N, stoneOf(color), { maxDepth: depth, budgetMs: 250 })
+        const { move } = bestMove(board, N, stoneOf(color), { maxDepth: depth, maxNodes: 2_000 })
         if (move) {
           const best = move.row * N + move.col
           if (best !== m.idx) {
