@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ActionTools } from 'deepspace/worker'
 import { fakeTools } from './fake-tools'
-import { botMove, createGame, joinGame, move, resign } from './game-actions'
+import { botMove, createGame, joinGame, move, offerDraw, resign, respondDraw } from './game-actions'
 
 const call = (fn: typeof move, tools: ActionTools, userId: string, params: Record<string, unknown>) =>
   fn({ userId, params, tools, env: {} as never, callerJwt: 'jwt' })
@@ -104,5 +104,59 @@ describe('game actions', () => {
     const gameId = (g.data as { gameId: string }).gameId
     expect((await call(botMove, tools, 'alice', { gameId })).success).toBe(true)
     expect(db.moves ?? []).toHaveLength(0)
+  })
+  describe('draw offers', () => {
+    const pvpGame = async () => {
+      const ft = fakeTools()
+      const g = await call(createGame, ft.tools, 'alice', { mode: 'pvp', color: 'X' })
+      const gameId = (g.data as { gameId: string }).gameId
+      await call(joinGame, ft.tools, 'bob', { gameId })
+      return { ...ft, gameId }
+    }
+
+    it('offer then accept ends the game as an agreed draw', async () => {
+      const { tools, db, gameId } = await pvpGame()
+      await call(move, tools, 'alice', { gameId, row: 7, col: 7 })
+      expect((await call(offerDraw, tools, 'alice', { gameId })).success).toBe(true)
+      expect(db.games[0].data).toMatchObject({ drawOffer: 'X', drawOfferPly: 1 })
+      expect(await call(respondDraw, tools, 'bob', { gameId, accept: true })).toMatchObject({ success: true })
+      expect(db.games[0].data).toMatchObject({ status: 'finished', winner: 'draw', endReason: 'agreed' })
+      expect(await call(move, tools, 'bob', { gameId, row: 0, col: 0 })).toMatchObject({ code: 'game_over' })
+    })
+
+    it('decline clears the offer and play continues', async () => {
+      const { tools, db, gameId } = await pvpGame()
+      await call(offerDraw, tools, 'alice', { gameId })
+      await call(respondDraw, tools, 'bob', { gameId, accept: false })
+      expect(db.games[0].data).toMatchObject({ status: 'active', drawOffer: '' })
+      expect(await call(respondDraw, tools, 'bob', { gameId, accept: true })).toMatchObject({ code: 'no_offer' })
+    })
+
+    it('the next stone played lapses the offer', async () => {
+      const { tools, db, gameId } = await pvpGame()
+      await call(offerDraw, tools, 'alice', { gameId })
+      await call(move, tools, 'alice', { gameId, row: 7, col: 7 })
+      expect(await call(respondDraw, tools, 'bob', { gameId, accept: true })).toMatchObject({ code: 'no_offer' })
+      expect(db.games[0].data.status).toBe('active')
+    })
+
+    it('only the opponent can accept, and only players can offer', async () => {
+      const { tools, gameId } = await pvpGame()
+      expect(await call(offerDraw, tools, 'eve', { gameId })).toMatchObject({ code: 'not_a_player' })
+      await call(offerDraw, tools, 'alice', { gameId })
+      expect(await call(respondDraw, tools, 'alice', { gameId, accept: true })).toMatchObject({ code: 'no_offer' })
+      expect(await call(respondDraw, tools, 'eve', { gameId, accept: true })).toMatchObject({ code: 'not_a_player' })
+      expect(await call(offerDraw, tools, 'bob', { gameId })).toMatchObject({ code: 'offer_pending' })
+    })
+
+    it('is refused for engine games and unjoined challenges', async () => {
+      const { tools } = fakeTools()
+      const bot = await call(createGame, tools, 'alice', { mode: 'bot', color: 'X' })
+      const botId = (bot.data as { gameId: string }).gameId
+      expect(await call(offerDraw, tools, 'alice', { gameId: botId })).toMatchObject({ code: 'not_pvp' })
+      const open = await call(createGame, tools, 'alice', { mode: 'pvp', color: 'X' })
+      const openId = (open.data as { gameId: string }).gameId
+      expect(await call(offerDraw, tools, 'alice', { gameId: openId })).toMatchObject({ code: 'waiting' })
+    })
   })
 })

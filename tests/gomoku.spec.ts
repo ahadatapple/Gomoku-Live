@@ -61,3 +61,27 @@ test('engine replies to a move', async ({ users }) => {
   await expect(a.page.getByText(/Moves · 2/)).toBeVisible({ timeout: 20_000 })
   await expect(a.page.getByTestId('status')).toHaveText('Your move.')
 })
+
+test('draw offer: White offers, Black accepts, both see the result live', async ({ users }) => {
+  test.setTimeout(90_000)
+  const [a, b] = await users(2)
+  await a.page.goto('/play')
+  await a.page.getByRole('radiogroup', { name: 'Your colour' }).nth(1).getByRole('radio', { name: /Black/ }).click()
+  await a.page.getByTestId('start-pvp').click()
+  await a.page.waitForURL(/\/g\//)
+  await b.page.goto(a.page.url())
+  await b.page.getByTestId('join').click()
+  await expect(a.page.getByTestId('status')).toHaveText('Your move.', { timeout: 15_000 })
+
+  await clickCell(a.page, 7, 7)
+  await expect(b.page.getByTestId('status')).toHaveText('Your move.', { timeout: 15_000 })
+  await b.page.getByTestId('offer-draw').click()
+  await expect(b.page.getByText('Draw offered.')).toBeVisible({ timeout: 15_000 })
+
+  const offer = a.page.getByTestId('draw-offer')
+  await expect(offer).toContainText('Your opponent offers a draw.', { timeout: 15_000 })
+  await offer.getByRole('button', { name: 'Accept' }).click()
+
+  await expect(a.page.getByTestId('status')).toHaveText('Draw agreed.', { timeout: 15_000 })
+  await expect(b.page.getByTestId('status')).toHaveText('Draw agreed.', { timeout: 15_000 })
+})

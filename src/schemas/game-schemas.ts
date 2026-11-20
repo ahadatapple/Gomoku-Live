@@ -40,11 +40,15 @@ export const gamesSchema: CollectionSchema = {
     text('whiteId', { maxLength: 128 }), // O
     text('hostId', { maxLength: 128 }),
     text('winner', { maxLength: 8 }), // 'X' | 'O' | 'draw' | ''
-    text('endReason', { maxLength: 16 }), // five | resign | full
+    text('endReason', { maxLength: 16 }), // five | resign | full | agreed | cancelled
     text('winLine', { interpretation: { kind: 'json' }, maxLength: 200 }),
     num('moveCount'),
     text('lastMoveAt', { interpretation: { kind: 'datetime' } }),
     num('remindedPly'), // last ply a turn-reminder email was sent for
+    // Draw offer: the offering colour and the ply it was made at. It only
+    // stands while no further stone is played (see openDrawOffer in rules.ts).
+    text('drawOffer', { maxLength: 1 }), // 'X' | 'O' | ''
+    num('drawOfferPly'),
   ],
   permissions: readOnlyForClients,
 }

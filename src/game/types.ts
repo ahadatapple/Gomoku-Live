@@ -10,6 +10,8 @@ export type GameRecord = {
   winLine?: string
   moveCount?: number
   lastMoveAt?: string
+  drawOffer?: string
+  drawOfferPly?: number
 }
 export type MoveRecord = { gameId: string; ply: number; idx: number; stone: string; byId: string; thinkMs?: number; nodes?: number; depth?: number }
 export type SeatRecord = { gameId: string; color: 'X' | 'O'; userId: string }

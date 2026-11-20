@@ -11,7 +11,7 @@ import type { ActionContext, ActionResult, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
 import { bestMove } from '../engine/search'
 import { LEVELS, isLevel, type Level } from '../engine/levels'
-import { N, checkMove, replay, stoneOf, type Color, type GameState, type MoveRow } from '../game/rules'
+import { N, checkMove, openDrawOffer, replay, stoneOf, type Color, type GameState, type MoveRow } from '../game/rules'
 
 export const BOT_ID = 'bot'
 
@@ -28,6 +28,8 @@ type Game = {
   winLine?: string
   moveCount?: number
   lastMoveAt?: string
+  drawOffer?: string
+  drawOfferPly?: number
 }
 type Seats = Partial<Record<Color, string>>
 type Ctx = ActionContext<Env>
@@ -222,4 +224,44 @@ export async function resign({ userId, params, tools }: Ctx): Promise<ActionResu
     endReason: cancel ? 'cancelled' : 'resign',
   })
   return { success: true, data: { gameId } }
+}
+
+/**
+ * Shared checks for draw offers: a live two-player game, and the caller holds a
+ * seat. Returns the position from the move log so the offer can be pinned to a ply.
+ */
+async function loadDrawContext(tools: ActionTools, userId: string, gameId: string) {
+  const game = await loadGame(tools, gameId)
+  if (!game) return fail('Game not found.', 'not_found')
+  if (game.mode !== 'pvp') return fail("The engine doesn't take draw offers.", 'not_pvp')
+  if (game.status === 'finished') return fail('The game is already over.', 'game_over')
+  if (game.status !== 'active') return fail('Wait for your opponent to join.', 'waiting')
+  const [seats, state] = await Promise.all([loadSeats(tools, gameId), loadState(tools, gameId)])
+  const me: Color | null = seats.X === userId ? 'X' : seats.O === userId ? 'O' : null
+  if (!me) return fail('Only the players can do that.', 'not_a_player')
+  if (state.winner) return fail('The game is already over.', 'game_over')
+  return { game, state, me, standing: openDrawOffer(game.drawOffer, game.drawOfferPly, state.ply) }
+}
+
+export async function offerDraw({ userId, params, tools }: Ctx): Promise<ActionResult> {
+  const gameId = str(params.gameId)
+  const ctx = await loadDrawContext(tools, userId, gameId)
+  if ('success' in ctx) return ctx
+  if (ctx.standing === ctx.me) return { success: true, data: { already: true } }
+  if (ctx.standing) return fail('Your opponent has already offered a draw. Accept or decline it.', 'offer_pending')
+  await tools.update('games', gameId, { drawOffer: ctx.me, drawOfferPly: ctx.state.ply })
+  return { success: true, data: { ply: ctx.state.ply } }
+}
+
+export async function respondDraw({ userId, params, tools }: Ctx): Promise<ActionResult> {
+  const gameId = str(params.gameId)
+  const ctx = await loadDrawContext(tools, userId, gameId)
+  if ('success' in ctx) return ctx
+  if (!ctx.standing || ctx.standing === ctx.me) return fail('There is no draw offer to answer.', 'no_offer')
+  const accept = params.accept === true
+  const patch: Partial<Game> = accept
+    ? { status: 'finished', winner: 'draw', endReason: 'agreed', drawOffer: '' }
+    : { drawOffer: '' }
+  await tools.update('games', gameId, patch)
+  return { success: true, data: { accepted: accept } }
 }

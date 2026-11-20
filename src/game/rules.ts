@@ -104,3 +104,12 @@ export function checkMove(
   if (state.board[idx] !== EMPTY) return { ok: false, code: 'occupied', error: 'That cell is taken.' }
   return { ok: true }
 }
+
+/**
+ * The colour whose draw offer is standing, or null. An offer is tied to the ply
+ * it was made at, so the next stone played (by either side) withdraws or
+ * declines it without any extra write.
+ */
+export function openDrawOffer(offer: unknown, offerPly: unknown, ply: number): Color | null {
+  return (offer === 'X' || offer === 'O') && offerPly === ply ? offer : null
+}

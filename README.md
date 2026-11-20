@@ -26,7 +26,8 @@ the server.
 - **Turn alerts.** While it's your move, the tab title shows "● Your move", with
   an optional browser notification if the tab is in the background. Opt-in
   emails go out if you've been away 10 minutes, at most one per turn.
-- Resign, cancel a challenge, rematch with colours swapped, a move list, a
+- Offer a draw (two-player games; the offer lapses when the next stone is played),
+  resign, cancel a challenge, rematch with colours swapped, a move list, a
   replay slider, and the engine's search depth and think time for its last move.
 
 ## How it uses DeepSpace
@@ -35,11 +36,10 @@ the server.
 |---|---|---|
 | **RecordRoom collections** (`games`, `moves`, `seats`) | All game state | Every client subscribes with `useQuery`, so moves reach players and spectators in real time without me writing any socket code. |
 | **RBAC** | Clients can **read** everything and **write nothing** | Even a hand-crafted websocket write can't place a stone. The only writer is the Worker. |
-| **Server actions** (`createGame`, `joinGame`, `move`, `botMove`, `resign`) | All mutations | Each action authorizes the caller from the verified JWT, checks turn, cell and game-over by replaying the move log, then writes. |
+| **Server actions** (`createGame`, `joinGame`, `move`, `botMove`, `resign`, `offerDraw`, `respondDraw`) | All mutations | Each action authorizes the caller from the verified JWT, checks turn, cell and game-over by replaying the move log, then writes. |
 | **`uniqueOn` constraints** | `moves(gameId, ply)` and `seats(gameId, color)` | RecordRoom checks and inserts in one synchronous step inside the Durable Object. So a double-click, two tabs, or two people grabbing the last seat can't both succeed. It's a platform primitive standing in for a lock or transaction I'd otherwise have to build. |
 | **Presence room** (`usePresenceRoom('game:<id>')`) | Who's at the board, spectator count, opponent's hover cursor | Ephemeral state belongs in presence, not in records. |
 | **Auth** | Sign-in to play; anonymous viewers can watch | `RecordProvider allowAnonymous` + read-only RBAC give spectating for free. |
-
 | **`anthropic/chat-completion`** (Claude Haiku) | AI post-game coach | Explaining *why* a game was lost is the one thing the search engine can't do. |
 | **`email/send`** | "Your move" reminders | Covers the case the tab alert can't: the player closed the tab. |
 | **Cron** (`src/cron.ts`) | Runs the reminder check every 5 minutes | Platform scheduler instead of a hand-rolled timer. |
@@ -138,7 +138,7 @@ and the corner diagonals are counted twice.
 ## Tests
 
 ```
-npm run test:unit                 # 365 unit tests: parity, rules, actions, coach, analysis, reminders, standings
+npm run test:unit                 # 370 unit tests: parity, rules, actions, draw offers, coach, analysis, reminders, standings
 npx deepspace test run gomoku     # two browsers: challenge link → live game → win; engine reply
 ```
 
@@ -146,7 +146,8 @@ The action tests run against an in-memory fake of the record tools that enforces
 `uniqueOn` the same way RecordRoom does. They cover turn order, occupied cells,
 non-players, moving before an opponent joins (a bug these tests caught),
 five-in-a-row, a double-submitted move landing once, two joiners racing for one
-seat, and resign.
+seat, resign, and draw offers (accept, decline, lapsing on the next move, only the
+opponent can accept).
 
 ## Layout
 
@@ -170,8 +171,8 @@ engine-parity/    original Python + fixture generator
 - **Leaderboard is computed client-side** from up to 1,000 finished games. That's
   fine at this scale. Past that I'd keep a `ratings` collection (Elo) updated by
   the `move`/`resign` actions.
-- **Resign vs a winning move in the same instant:** the move log stays correct,
-  but the `games` index could record the resign. A conditional update would close
+- **Resign or draw-accept vs a move in the same instant:** the move log stays
+  correct, but the `games` index could record the resign or agreed draw. A conditional update would close
   that gap.
 - **No renju/swap opening rules**, so Black has a known advantage in freestyle.
 - Expose the engine as a DeepSpace agent tool so a local agent can play via

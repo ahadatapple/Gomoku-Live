@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AuthOverlay, useAuth, usePresenceRoom, useUserLookup } from 'deepspace'
-import { Bell, Check, Copy, Cpu, Eye, Flag, RotateCcw } from 'lucide-react'
+import { Bell, Check, Copy, Cpu, Eye, Flag, Handshake, RotateCcw } from 'lucide-react'
 import { Button, useToast } from '@/components/ui'
 import { Board, cellName } from '../../../components/game/Board'
 import { callAction } from '../../../lib/callAction'
-import { N, replay, type Color } from '../../../game/rules'
+import { N, openDrawOffer, replay, type Color } from '../../../game/rules'
 import { CoachPanel } from '../../../components/game/CoachPanel'
 import { EmailToggle } from '../../../components/game/EmailToggle'
 import { useTurnAlert } from '../../../game/useTurnAlert'
@@ -123,6 +123,7 @@ export default function GamePage() {
 
   const status = (() => {
     if (state.winner === 'draw') return 'Board full — a draw.'
+    if (game.endReason === 'agreed') return 'Draw agreed.'
     if (game.endReason === 'cancelled') return 'Challenge cancelled.'
     if (game.endReason === 'resign') {
       const w = game.winner as Color
@@ -139,6 +140,8 @@ export default function GamePage() {
   })()
 
   const lastBot = [...moves].reverse().find((m) => m.byId === BOT_ID)
+  const drawOffer = finished ? null : openDrawOffer(game.drawOffer, game.drawOfferPly, state.ply)
+  const canOfferDraw = !!myColor && !finished && game.mode === 'pvp' && game.status === 'active'
 
   return (
     <div className="mx-auto grid max-w-6xl gap-8 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -243,6 +246,31 @@ export default function GamePage() {
             ) : (
               <Button onClick={() => setSignIn(true)}>Sign in to play</Button>
             )
+          )}
+          {drawOffer && drawOffer !== myColor && (
+            <div className="rounded-md border border-border bg-card p-3 text-sm" data-testid="draw-offer">
+              <p className="mb-2">
+                {myColor ? 'Your opponent offers' : `${COLOR_NAME[drawOffer]} offers`} a draw.
+              </p>
+              {myColor && (
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={busy} onClick={() => act('respondDraw', { gameId: id, accept: true })}>
+                    Accept
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => act('respondDraw', { gameId: id, accept: false })}>
+                    Decline
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+          {canOfferDraw && drawOffer === myColor && (
+            <p className="text-xs text-muted-foreground">Draw offered. It lapses when the next stone is played.</p>
+          )}
+          {canOfferDraw && !drawOffer && (
+            <Button variant="ghost" disabled={busy} onClick={() => act('offerDraw', { gameId: id })} data-testid="offer-draw">
+              <Handshake className="h-4 w-4" /> Offer a draw
+            </Button>
           )}
           {myColor && !finished && (
             <Button variant="ghost" disabled={busy} onClick={() => act('resign', { gameId: id })}>
